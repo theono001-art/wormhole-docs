@@ -1,0 +1,435 @@
+openapi: 3.0.0
+info:
+  title: Messaging Executor API
+  version: 1.0.0
+tags:
+  - name: Capabilities
+  - name: Quote
+  - name: Status
+paths:
+  /capabilities:
+    get:
+      operationId: CapabilitiesInterface_list
+      summary: Get capabilities for all supported chains
+      description: Retrieves the supported features and capabilities for all supported blockchains (as wormhole chain ID)
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CapabilitiesResponse'
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      tags:
+        - Capabilities
+  /quote:
+    post:
+      operationId: QuoteInterface_create
+      summary: Generate a quote for cross-chain transaction
+      description: Provides a signed quote for cross-chain relay with optional cost estimation
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuoteResponse'
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      tags:
+        - Quote
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QuoteRequest'
+  /status/tx:
+    post:
+      operationId: StatusInterface_getTransaction
+      summary: Get status of a transaction
+      description: Retrieves the status of a request for execution transaction and potentially initiates processing (when first time statusing and chain ID provided)
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RelayTransaction'
+        default:
+          description: An unexpected error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      tags:
+        - Status
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StatusRequest'
+components:
+  schemas:
+    Capabilities:
+      type: object
+      required:
+        - requestPrefixes
+      properties:
+        requestPrefixes:
+          type: array
+          items:
+            type: string
+          description: Request prefixes enabled for given chain
+        gasDropOffLimit:
+          type: string
+          description: Gas Drop-off limit, native chain token bigint represented as string
+        maxGasLimit:
+          type: string
+          description: Maximum Gas limit
+        maxMsgValue:
+          type: string
+          description: Max message value, native chain token bigint represented as string
+    CapabilitiesResponse:
+      type: object
+      additionalProperties:
+        $ref: '#/components/schemas/Capabilities'
+      description: Object with chain IDs (Wormhole Chain ID) as keys and their capabilities as values
+    ERC1Request:
+      type: object
+      required:
+        - prefix
+        - sourceDomain
+        - nonce
+      properties:
+        prefix:
+          type: string
+          enum:
+            - ERC1
+          description: Request prefix identifier
+        sourceDomain:
+          type: integer
+          format: int32
+          description: Source domain
+        nonce:
+          type: string
+          description: Nonce value
+    ERC2Request:
+      type: object
+      required:
+        - prefix
+        - cctpV2Request
+      properties:
+        prefix:
+          type: string
+          enum:
+            - ERC2
+          description: Request prefix identifier
+        cctpV2Request:
+          type: object
+          properties:
+            cctpV2RequestPrefix:
+              type: string
+              description: CCTP V2 request prefix mode
+          required:
+            - cctpV2RequestPrefix
+          description: CCTP V2 request configuration
+    ERN1Request:
+      type: object
+      required:
+        - prefix
+        - srcChain
+        - srcManager
+        - messageId
+      properties:
+        prefix:
+          type: string
+          enum:
+            - ERN1
+          description: Request prefix identifier
+        srcChain:
+          type: integer
+          format: int32
+          description: Source chain ID
+        srcManager:
+          type: string
+          description: Source manager address
+        messageId:
+          type: string
+          description: Message identifier
+    ERV1Request:
+      type: object
+      required:
+        - prefix
+        - chain
+        - address
+        - sequence
+      properties:
+        prefix:
+          type: string
+          enum:
+            - ERV1
+          description: Request prefix identifier
+        chain:
+          type: integer
+          format: int32
+          description: Chain ID
+        address:
+          type: string
+          description: Contract address
+        sequence:
+          type: string
+          description: Sequence number
+    ErrorResponse:
+      type: object
+      required:
+        - message
+      properties:
+        message:
+          type: string
+        statusCode:
+          type: integer
+          format: int32
+    QuoteRequest:
+      type: object
+      required:
+        - srcChain
+        - dstChain
+      properties:
+        srcChain:
+          type: integer
+          format: int32
+          description: Source wormhole chain ID
+        dstChain:
+          type: integer
+          format: int32
+          description: Destination wormhole chain ID
+        relayInstructions:
+          type: string
+          description: Optional hex-encoded relay instructions for cost estimation
+    QuoteResponse:
+      type: object
+      required:
+        - signedQuote
+      properties:
+        signedQuote:
+          type: string
+          description: Hex-encoded signed quote
+        estimatedCost:
+          type: string
+          description: Estimated cost in source chain native token units
+    RelayTransaction:
+      type: object
+      required:
+        - chainId
+        - estimatedCost
+        - id
+        - indexedAt
+        - requestForExecution
+        - signedQuote
+        - status
+        - txHash
+      properties:
+        chainId:
+          type: integer
+          format: int32
+          description: Wormhole chain ID where the transaction originated
+        estimatedCost:
+          type: string
+          description: Estimated cost for the relay in source chain native token
+        id:
+          type: string
+          description: Unique identifier for the relay transaction
+        indexedAt:
+          type: string
+          description: Timestamp when the transaction was indexed
+        instruction:
+          allOf:
+            - $ref: '#/components/schemas/RequestInstruction'
+          description: Parsed relay instruction details
+        requestForExecution:
+          allOf:
+            - $ref: '#/components/schemas/RequestForExecution'
+          description: Original request for execution details
+        signedQuote:
+          allOf:
+            - $ref: '#/components/schemas/SignedQuote'
+          description: Signed quote used for this transaction
+        status:
+          type: string
+          description: Current status of the relay (pending, submitted, failed, etc.)
+        txHash:
+          type: string
+          description: Original transaction hash
+        failureCause:
+          type: string
+          description: Reason for failure if status is 'failed'
+        txs:
+          type: array
+          items:
+            $ref: '#/components/schemas/TxInfo'
+          description: List of destination chain transactions executed
+    RequestForExecution:
+      type: object
+      required:
+        - quoterAddress
+        - amtPaid
+        - dstChain
+        - dstAddr
+        - refundAddr
+        - signedQuoteBytes
+        - requestBytes
+        - relayInstructionsBytes
+        - timestamp
+      properties:
+        quoterAddress:
+          type: string
+          description: Public key of Quoter
+        amtPaid:
+          type: string
+          description: Amount paid for the relay in source chain native token
+        dstChain:
+          type: integer
+          format: int32
+          description: Destination Wormhole chain ID
+        dstAddr:
+          type: string
+          description: Destination address to execute the transaction
+        refundAddr:
+          type: string
+          description: Refund address for excess payment
+        signedQuoteBytes:
+          type: string
+          description: Hex-encoded signed quote bytes
+        requestBytes:
+          type: string
+          description: Hex-encoded request bytes
+        relayInstructionsBytes:
+          type: string
+          description: Hex-encoded relay instruction bytes
+        timestamp:
+          type: string
+          description: Timestamp when the request was created
+    RequestInstruction:
+      type: object
+      required:
+        - request
+      properties:
+        request:
+          anyOf:
+            - $ref: '#/components/schemas/ERV1Request'
+            - $ref: '#/components/schemas/ERN1Request'
+            - $ref: '#/components/schemas/ERC1Request'
+            - $ref: '#/components/schemas/ERC2Request'
+          description: The request details, structure depends on the prefix type
+      description: Request instruction details that vary by prefix type
+    SignedQuote:
+      type: object
+      required:
+        - quote
+      properties:
+        quote:
+          type: object
+          properties:
+            prefix:
+              type: string
+              description: Quote prefix identifier (e.g., 'EQ01')
+            quoterAddress:
+              type: string
+              description: Address of the quoter providing the quote
+            payeeAddress:
+              type: string
+              description: Address that will receive payment
+            srcChain:
+              type: integer
+              format: int32
+              description: Source Wormhole chain ID
+            dstChain:
+              type: integer
+              format: int32
+              description: Destination Wormhole chain ID
+            expiryTime:
+              type: string
+              description: Quote expiration time
+            baseFee:
+              type: string
+              description: Base fee for the relay
+            dstGasPrice:
+              type: string
+              description: Gas price on destination chain
+            srcPrice:
+              type: string
+              description: Source chain token price
+            dstPrice:
+              type: string
+              description: Destination chain token price
+          required:
+            - prefix
+            - quoterAddress
+            - payeeAddress
+            - srcChain
+            - dstChain
+            - expiryTime
+            - baseFee
+            - dstGasPrice
+            - srcPrice
+            - dstPrice
+          description: Quote details
+        signature:
+          type: string
+          description: Cryptographic signature of the quote
+    StatusRequest:
+      type: object
+      required:
+        - txHash
+      properties:
+        chainId:
+          type: integer
+          format: int32
+          description: Wormhole chain ID for the transaction
+        txHash:
+          type: string
+          description: Transaction hash
+    TxInfo:
+      type: object
+      required:
+        - txHash
+        - chainId
+        - blockNumber
+        - cost
+      properties:
+        txHash:
+          type: string
+          description: Relayed transaction hash
+        chainId:
+          type: integer
+          format: int32
+          description: Wormhole chain ID for the transaction
+        blockNumber:
+          type: string
+          description: Block number (or slot/epoch)
+        blockTime:
+          type: string
+          description: Block time as timestamp
+        cost:
+          type: string
+          description: Relay cost in native token units (wei/lamports/etc)
+servers:
+  - url: http://localhost:3000/v0
+    description: Local development server
+    variables: {}

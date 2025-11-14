@@ -3,4 +3,5 @@ nav:
 - 'EVM Core Contract': core-contract-evm.md
 - 'Solana Core Contract': core-contract-solana.md
 - 'Executor Addresses': executor-addresses.md
+- 'Executor API Reference': executor-api-reference.md
 - 'Relayer Contract': relayer-contract.md
