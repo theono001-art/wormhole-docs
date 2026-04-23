@@ -1,0 +1,180 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+
+import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
+
+interface IPancakeRouter02 {
+    function swapExactTokensForETHSupportingFeeOnTransferTokens(
+        uint amountIn,
+        uint amountOutMin,
+        address[] calldata path,
+        address to,
+        uint deadline
+    ) external;
+
+    function addLiquidityETH(
+        address token,
+        uint amountTokenDesired,
+        uint amountTokenMin,
+        uint amountETHMin,
+        address to,
+        uint deadline
+    ) external payable;
+
+    function WETH() external pure returns (address); // WBNB
+}
+
+contract MaboNHSS is ERC20, Ownable {
+
+    uint256 public constant TOTAL_SUPPLY = 10_000_000_000 * 1e18;
+
+    // Wallets
+    address public donationWallet;
+    address public marketingWallet;
+    address public devWallet;
+
+    // Fees (3.5% รวม)
+    uint256 public donationFee = 10;   // 1.0%
+    uint256 public liquidityFee = 15;  // 1.5%
+    uint256 public marketingFee = 5;   // 0.5%
+    uint256 public devFee = 5;         // 0.5%
+    uint256 public constant FEE_DENOM = 1000;
+
+    // DEX
+    address public pair;
+    IPancakeRouter02 public router;
+
+    mapping(address => bool) public isExcludedFromFee;
+
+    // Swap control
+    bool private inSwap;
+    uint256 public swapThreshold = 100_000 * 1e18;
+
+    modifier lockTheSwap {
+        inSwap = true;
+        _;
+        inSwap = false;
+    }
+
+    constructor(
+        address _router,
+        address _donation,
+        address _marketing,
+        address _dev
+    ) ERC20("Mabo NHSS", "MNHSS") {
+
+        router = IPancakeRouter02(_router);
+
+        donationWallet = _donation;
+        marketingWallet = _marketing;
+        devWallet = _dev;
+
+        _mint(msg.sender, TOTAL_SUPPLY);
+
+        isExcludedFromFee[msg.sender] = true;
+        isExcludedFromFee[address(this)] = true;
+    }
+
+    function setPair(address _pair) external onlyOwner {
+        pair = _pair;
+    }
+
+    function setWallets(
+        address _donation,
+        address _marketing,
+        address _dev
+    ) external onlyOwner {
+        donationWallet = _donation;
+        marketingWallet = _marketing;
+        devWallet = _dev;
+    }
+
+    function _transfer(address from, address to, uint256 amount) internal override {
+
+        uint256 contractTokenBalance = balanceOf(address(this));
+
+        if (
+            contractTokenBalance >= swapThreshold &&
+            !inSwap &&
+            from != pair
+        ) {
+            processFees(contractTokenBalance);
+        }
+
+        bool isTrade = (from == pair || to == pair);
+
+        if (!isTrade || isExcludedFromFee[from] || isExcludedFromFee[to]) {
+            super._transfer(from, to, amount);
+            return;
+        }
+
+        uint256 totalFee = donationFee + liquidityFee + marketingFee + devFee;
+        uint256 feeAmount = amount * totalFee / FEE_DENOM;
+        uint256 sendAmount = amount - feeAmount;
+
+        super._transfer(from, address(this), feeAmount);
+        super._transfer(from, to, sendAmount);
+    }
+
+    function processFees(uint256 tokenAmount) private lockTheSwap {
+
+        uint256 totalFee = donationFee + liquidityFee + marketingFee + devFee;
+
+        uint256 liquidityTokens = tokenAmount * liquidityFee / totalFee;
+        uint256 half = liquidityTokens / 2;
+        uint256 otherHalf = liquidityTokens - half;
+
+        uint256 tokensToSwap = tokenAmount - half;
+
+        uint256 initialBNB = address(this).balance;
+
+        swapTokensForBNB(tokensToSwap);
+
+        uint256 newBNB = address(this).balance - initialBNB;
+
+        uint256 bnbForLiquidity = newBNB * liquidityFee / totalFee / 2;
+        uint256 bnbForDonation = newBNB * donationFee / totalFee;
+        uint256 bnbForMarketing = newBNB * marketingFee / totalFee;
+        uint256 bnbForDev = newBNB * devFee / totalFee;
+
+        addLiquidity(otherHalf, bnbForLiquidity);
+
+        payable(donationWallet).transfer(bnbForDonation);
+        payable(marketingWallet).transfer(bnbForMarketing);
+        payable(devWallet).transfer(bnbForDev);
+    }
+
+    function swapTokensForBNB(uint256 tokenAmount) private {
+
+        address[] memory path = new address[](2);
+        path[0] = address(this);
+        path[1] = router.WETH(); // WBNB
+
+        _approve(address(this), address(router), tokenAmount);
+
+        router.swapExactTokensForETHSupportingFeeOnTransferTokens(
+            tokenAmount,
+            0,
+            path,
+            address(this),
+            block.timestamp
+        );
+    }
+
+    function addLiquidity(uint256 tokenAmount, uint256 bnbAmount) private {
+
+        _approve(address(this), address(router), tokenAmount);
+
+        router.addLiquidityETH{value: bnbAmount}(
+            address(this),
+            tokenAmount,
+            0,
+            0,
+            owner(),
+            block.timestamp
+        );
+    }
+
+    receive() external payable {}
+}
